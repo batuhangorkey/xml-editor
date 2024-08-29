@@ -1,0 +1,12 @@
+services:
+  editor:
+    build: .
+    ports:
+      - "7030:7030"
+    volumes:
+      - ./xml:/app/xml
+    environment:
+      - NODE_ENV=production
+      - PORT=7030
+      - XML_DIR_PATH=/app/xml
+      - XML_FILE_NAME=server.config

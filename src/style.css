@@ -1,0 +1,31 @@
+body {
+  font-family: Arial, sans-serif;
+  background-color: #f8f9fa;
+}
+
+.xml-element {
+  color: #d63384;
+  white-space: pre; /* Preserve whitespace for indentation */
+}
+
+.editable-text {
+  color: #000;
+  background-color: #e9ecef;
+  padding: 2px;
+  border-radius: 3px;
+}
+
+.tag {
+  background-color: rgba(0, 123, 255, 0.1);
+  color: black;
+  border-left: 2px solid #007bff;
+}
+
+.tag-name {
+  color: #007bff;
+}
+
+.attributes {
+  color: #007bff;
+  font-style: italic;
+}
