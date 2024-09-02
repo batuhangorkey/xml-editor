@@ -2,9 +2,7 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import bodyParser from 'body-parser';
-import * as cheerio from 'cheerio';
 import cors from 'cors';
-import beautify from 'xml-beautifier';
 import session from 'express-session';
 
 const app = express();
@@ -21,11 +19,11 @@ const __dirname = path.resolve();
 console.log('Current directory: ' + __dirname);
 
 // get the port from the environment variable or use 7000
-const PORT = process.env.PORT || 7000;
+const PORT = process.env.CONTAINER_PORT  || 8080;
 const TIMEOUT = process.env.TIMEOUT || 25000;
 
 // get the xml file path from env
-const xmlDir = process.env.XML_DIR_PATH || path.join(__dirname, 'public');
+const xmlDir = process.env.XML_DIR_PATH || path.join(__dirname, 'xml');
 const xmlFileName = process.env.XML_FILE_NAME || 'server.config';
 const xmlFilePath = path.join(xmlDir, xmlFileName);
 
@@ -119,8 +117,21 @@ app.get('/api/xml/:filename', (req, res) => {
     console.log('File locked by this session id already');
     console.log('session id: ' + req.sessionID);
     console.log('file session id: ' + locks[req.params.filename].sessionId);
-    res.type('application/xml');
-    res.status(200).send(fs.readFileSync(path.join(xmlDir, req.params.filename), 'utf8'));
+
+    // check if the xml file we are reading is read only with fs module
+    // if it is read only, return 400 status code
+    // if it is not read only, return the content of the xml file
+    const stats = fs.statSync(path.join(xmlDir, req.params.filename));
+    if (stats.mode & 0o200) {
+      res.type('application/xml');
+      res.status(200).send(fs.readFileSync(path.join(xmlDir, req.params.filename), 'utf8'));
+    } else {
+      console.log('File is read only');
+      res.status(401).send('File is read only');
+    }
+
+    //res.type('application/xml');
+    //res.status(200).send(fs.readFileSync(path.join(xmlDir, req.params.filename), 'utf8'));
   }
 
 });

@@ -11,25 +11,14 @@ const Node = ({ node, path, onInputChange, xmlDoc, setUpdatedXml, duplicateIds }
   const removableNodes = ['Store', 'PosId', 'MailTo', 'MailCC', 'Port'];
   const nonTextNodes = ['Stores', 'Ports', 'MailTos'];
 
-  // update node when node changes
-  useEffect(() => {
-    console.log('Node updated');
-  }, [node]);
-
-
-  // update xml when xmlDoc changes
-  useEffect(() => {
-    // console.log('xmlDoc changed on Node');
-  }, [xmlDoc]);
-
   const toggleOpen = () => {
     setIsOpen(!isOpen);
   };
-  
+
   const handleInputChange = (event, path, attrName, node) => {
     onInputChange(event, path, attrName, node);
   }
-  
+
   const addPosId = (node, path) => {
     console.log('adding pos');
     console.log(node);
@@ -256,7 +245,7 @@ function App() {
   const [duplicateIds, setDuplicateIds] = useState(new Set());
   const [selectedFile, setSelectedFile] = useState('server.config');
   const [xmlFiles, setXmlFiles] = useState([]);
-  const [userMsg, setUserMsg] = useState('Loading XML file...');
+  const [userMsg, setUserMsg] = useState('');
 
   var intervalId = null;
 
@@ -281,9 +270,9 @@ function App() {
         console.error('Failed to send keep-alive.');
       }
       if (response.status === 400) {
-        setUserMsg('Session expired. Please refresh the page.');
+        setUserMsg('File is locked by another user.');
         clearInterval(intervalId);
-        setXmlDoc(null);
+        // setXmlDoc(null);
       }
     });
   }
@@ -292,13 +281,18 @@ function App() {
     console.log('selected file changed: ' + selectedFile);
     
     if (selectedFile) {
+      setUserMsg('Loading XML file...');
+
       fetch(`/api/xml/${selectedFile}`)
         .then(response => {
           console.log(response);
           if (response.status === 409) {
             throw new Error('File is locked by another user.');
           }
-          else if (response.status != 200) {
+          else if (response.status === 401) {
+            throw new Error('File is read only.');
+          }
+          else if (response.status !== 200) {
             throw new Error('Failed to load XML file.');
           }
           return response.text();
@@ -310,22 +304,17 @@ function App() {
           
           setXmlDoc(xml);
           findDuplicateIds(xml);
-
           console.log('xml loaded for ' + selectedFile);
-          
           console.log('clearing interval id: ' + intervalId);
           clearInterval(intervalId);
-
           let id = setInterval(sendKeepAlive, KEEP_ALIVE_INTERVAL);
-          console.log('new interval id: ' + id);
-        
+          // console.log('new interval id: ' + id);
           intervalId = id;
-          
-          console.log('interval id: ' + intervalId);
+          // console.log('interval id: ' + intervalId);
+          setUserMsg('');
         })
         .catch(err => {
           clearInterval(intervalId);
-
           setXmlDoc(null);
           setUserMsg(err.message);
           console.error(err);
@@ -338,7 +327,8 @@ function App() {
   }, [selectedFile]);
 
   function loadXMLFiles() {
-    console.log('fetching xml file list');
+    console.log('Fetching xml file list');
+
     fetch('/api/xml/files')
       .then(response => response.json())
       .then(data => {
@@ -363,16 +353,18 @@ function App() {
         clearInterval(intervalId);
       } else {
         console.log('Switched back to tab');
-        // loadXMLFiles();
-        // let id = setInterval(sendKeepAlive, KEEP_ALIVE_INTERVAL);
-        // console.log('new interval id: ' + id);
-        // intervalId = id;
+        sendKeepAlive();
+
+        clearInterval(intervalId);
+        let id = setInterval(sendKeepAlive, KEEP_ALIVE_INTERVAL);
+        intervalId = id;
+        loadXMLFiles();
       }
     }
 
-    console.log('Loading site');
     loadXMLFiles();
     
+
     window.addEventListener('beforeunload', handleBeforeUnload);
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
@@ -390,10 +382,13 @@ function App() {
   };
 
   const findDupChildren = (node) => {
-    // check textContent of node to determine if it's a duplicate
+    // check textContent of children of a node to determine if it's a duplicate
+    // if so, set duplicate to true
     const children = Array.from(node.children);
     const ids = new Map();
     const duplicates = new Set();
+    const duplicateNodes = new Set();
+
     children.forEach((child, index) => {
       const id = child.textContent;
       if (id === null || id.trim() === '') {
@@ -418,6 +413,7 @@ function App() {
       });
     });
 
+    return duplicates;
   };
 
   const findDuplicateIds = (xml) => {
@@ -479,29 +475,85 @@ function App() {
   };
 
   const saveXml = () => {
+    const numCheck = (node) => {
+      if (node.textContent.trim() === '') {
+        alert(`${node.tagName} cannot be empty. Please fix before saving.`);
+        return;
+      } else if (node.textContent.match(/\D/)) {
+        alert(`${node.tagName} must be a number (${node.textContent}). Please fix beefore saving.`);
+        return;
+      }
+    };
+
     console.log('saving xml');
     if (!xmlDoc) {
       return;
     }
-    
-    // check if stores have empty id
+
+    // check mails
+    const mailTos = xmlDoc.querySelector('MailTos');
+    if (mailTos.children.length === 0) {
+      alert('No MailTos found.');
+      return;
+    }
+
+    // check ports
+    const ports = xmlDoc.querySelectorAll('Port');
+    if (ports.length === 0) {
+      alert('No ports found.');
+      return;
+    }
+    for (let i = 0; i < ports.length; i++) {
+      if (ports[i].textContent.trim() === '') {
+        alert('Port cannot be empty. Please fix before saving.');
+        return;
+      } else if (ports[i].textContent.match(/\D/)) {
+        alert('Port must be a number. Please fix before saving.');
+        return;
+      }
+    }
+
+    // check if stores are unique, not empty, and numbers
     // if so, alert and return
     const stores = xmlDoc.querySelectorAll('Store');
     if (stores.length === 0) {
       alert('No stores found.');
       return;
     }
-
     for (let i = 0; i < stores.length; i++) {
       if (!stores[i].getAttribute('id') || stores[i].getAttribute('id').trim() === '') {
-        alert('Store id cannot be empty.');
+        alert('Store id cannot be empty. Please fix before saving.');
+        return;
+      } else if (stores[i].getAttribute('id').match(/\D/)) {
+        alert(`Store with id ${stores[i].getAttribute('id')} must be a number. Please fix before saving.`);
         return;
       }
     }
-    
-    if (duplicateIds.size > 0) {
-      alert('Duplicate store ids found. Please fix before saving.');
-      return;
+
+    // check if pos ids are unique, not empty, and numbers
+    // if not, alert and return
+    for (let i = 0; i < stores.length; i++) {
+      const posIds = stores[i].querySelectorAll('PosId');
+      const ids = new Map();
+      if (posIds.length === 0) {
+        alert('No PosIds found in Store ' + stores[i].getAttribute('id') + '. Please fix before saving.');
+        return;
+      }
+      for (let j = 0; j < posIds.length; j++) {
+        const id = posIds[j].textContent;
+        if (ids.has(id)) {
+          alert('Duplicate PosId found in Store ' + stores[i].getAttribute('id') + '. Please fix before saving.');
+          return;
+        } else if (id.trim() === '') {
+          alert('PosId cannot be empty in Store ' + stores[i].getAttribute('id') + '. Please fix before saving.');
+          return;
+        } else if (id.match(/\D/)) { 
+          alert('PosId must be a number in Store ' + stores[i].getAttribute('id') + '. Please fix before saving.');
+          return;
+        } else {
+          ids.set(id, true);
+        }
+      }
     }
     
     console.log('saving xml');
@@ -515,18 +567,17 @@ function App() {
       if (response.ok) {
         alert('XML file saved successfully.');
       } else if (response.status === 409) {
-        alert('Another user is in the system. Wait until they leave and reload the page.');
+        // alert('Another user is in the system. Wait until they leave and reload the page.');
         // setEditable(false);
-        setUserMsg('Another user is in the system. Wait until they leave and reload the page.');
+        setUserMsg('Your session has expired and another user entered the editor. Please wait and reload the page.');
         setXmlDoc(null);
+
       } else {
         alert('Failed to save XML file.');
       }
     });
     loadXMLFiles(); // reload xml files
   };
-  
-  
 
   return (
     <>
@@ -536,7 +587,10 @@ function App() {
             <div className="navbar-brand d-flex align-items-center">
               <h3 className="me-2 my-0">XML Editor</h3>
             </div>
-            <button className="btn btn-primary" onClick={saveXml}>
+            <button 
+              className="btn btn-primary" 
+              onClick={saveXml} 
+              disabled={userMsg !== ''}>
               Save
             </button>
             
@@ -556,6 +610,14 @@ function App() {
         </nav>
       </header>
       <div className="vw-100 justify-content-center container mt-5 pt-5 w-100 px-0" id="xmlContainer">
+        { userMsg ? (
+          <div className="text-center">
+            <h1>
+              { userMsg }
+            </h1>
+          </div>
+        ) : null }
+
         {xmlDoc ? ( 
           <Node
             key={xmlDoc.documentElement.tagName}
@@ -566,12 +628,7 @@ function App() {
             setUpdatedXml={setUpdatedXml}
             duplicateIds={duplicateIds}
           />
-        ) : <div className="text-center">
-              <h1>
-                { userMsg }
-              </h1>
-            </div>
-        }
+        ) : null }
       </div>
     </>
   );
