@@ -15,9 +15,11 @@ RUN npm run build
 FROM node:22.7.0-alpine3.20
 WORKDIR /app
 
+ENV NODE_ENV=production
+
 COPY package*.json /app/
 
-RUN npm ci --only=production
+RUN npm ci --only=production --no-optional
 
 COPY --from=builder /app/dist /app/dist
 COPY --from=builder /app/server.js /app/server.js

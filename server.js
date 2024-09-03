@@ -18,13 +18,11 @@ app.use(session({
 const __dirname = path.resolve();
 console.log('Current directory: ' + __dirname);
 
-// get the port from the environment variable or use 7000
 const PORT = process.env.CONTAINER_PORT  || 8080;
 const TIMEOUT = process.env.TIMEOUT || 25000;
-
-// get the xml file path from env
 const xmlDir = process.env.XML_DIR_PATH || path.join(__dirname, 'xml');
 const xmlFileName = process.env.XML_FILE_NAME || 'server.config';
+
 const xmlFilePath = path.join(xmlDir, xmlFileName);
 
 const locks = {};

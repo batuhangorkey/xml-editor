@@ -4,12 +4,12 @@ import './App.css';
 import './style.css';
 
 const KEEP_ALIVE_INTERVAL = 10000;
+const removableNodes = ['Store', 'PosId', 'MailTo', 'MailCC', 'Port'];
+const nonTextNodes = ['Stores', 'Ports', 'MailTos', 'DBPropertyFile', 'UploadTransDB'];
 
-const Node = ({ node, path, onInputChange, xmlDoc, setUpdatedXml, duplicateIds }) => {
+const Node = ({ node, path, onInputChange, xmlDoc, setUpdatedXml }) => {
   const [isOpen, setIsOpen] = useState(true);
   const [updatedNode, setUpdatedNode] = useState(null);
-  const removableNodes = ['Store', 'PosId', 'MailTo', 'MailCC', 'Port'];
-  const nonTextNodes = ['Stores', 'Ports', 'MailTos'];
 
   const toggleOpen = () => {
     setIsOpen(!isOpen);
@@ -20,10 +20,6 @@ const Node = ({ node, path, onInputChange, xmlDoc, setUpdatedXml, duplicateIds }
   }
 
   const addPosId = (node, path) => {
-    console.log('adding pos');
-    console.log(node);
-    console.log(path);
-
     const newPosId = xmlDoc.createElement('PosId');
     // get siblings then set content to length + 1
     // node: Store node
@@ -34,17 +30,12 @@ const Node = ({ node, path, onInputChange, xmlDoc, setUpdatedXml, duplicateIds }
   }
   
   const removeNode = (node) => {
-    console.log('removing node');
-    console.log(node);
     node.remove();
     setUpdatedXml(new XMLSerializer().serializeToString(xmlDoc));
   }
 
 
   const addStore = (node, path) => {
-    console.log('adding store');
-    console.log(node);
-    console.log(path);
     const newStore = xmlDoc.createElement('Store');
     newStore.setAttribute('id', '');
     newStore.setAttribute('secondPort', '');
@@ -59,48 +50,44 @@ const Node = ({ node, path, onInputChange, xmlDoc, setUpdatedXml, duplicateIds }
     setUpdatedXml(new XMLSerializer().serializeToString(xmlDoc));
   }
 
-  const renderAttributes = (node) => {
-    if (node.attributes.length === 0) return;
-    return (
-      <div key={"col" + path}
-        className="col">
-      <div key={"inputgroup" + path}
-        className="input-group input-group-sm">
-      {Array.from(node.attributes).map((attr, index) => (
-        <>
-          <span 
-            id={"span" + attr.name + path + index}
-            key={"span" + attr.name + path + index}
-            className="input-group-text">
-            {attr.name}
-          </span>
+  const handleAttributeChange = (event, path, attrName, node) => {
+    const updatedValue = event.target.value;
+    node.setAttribute(attrName, updatedValue);
+    setUpdatedXml(new XMLSerializer().serializeToString(xmlDoc));
+  }
+
+  const Attributes = ({ node }) => {
+    if (node.attributes === undefined) return null;
+    if (node.attributes.length === 0) return null;
+    return Array.from(node.attributes).map((attr, index) => (
+      <div key={"col" + path + index} className="col">
+        <div
+          key={"input-group" + path + index}
+          className="input-group input-group-sm py-1">
+          <span
+            key={"span" + path + index}
+            className="input-group-text">{attr.name}</span>
           <input
-            id={"input" + attr.name + path + index}
-            key={"input" + attr.name + path + index}
+            key={"input" + path + index}
             type="text"
             className="form-control form-control-sm"
             value={attr.value}
-            onChange={(e) => handleInputChange(e, path, attr.name, node)}
+            onChange={(e) => handleAttributeChange(e, path, attr.name, node)}
           />
-        </>
-      ))}
+        </div>
       </div>
-      </div>
-    );
+    ));
   }
   
   const addNode = (node, tagName) => {
-    console.log('adding node');
-    console.log(node);
-    console.log(tagName);
     const newNode = xmlDoc.createElement(tagName);
     // add to top
     node.insertBefore(newNode, node.firstChild);
     setUpdatedXml(new XMLSerializer().serializeToString(xmlDoc));
   }
 
-  const handleMailTos = (node, path) => {
-    if (node.tagName !== 'MailTos') return;
+  const MailTosComponent = ({ node }) => {
+    if (node.tagName !== 'MailTos') return null;
     return (
       <div className="col-auto">
         <div className="input-group input-group-sm">
@@ -115,29 +102,39 @@ const Node = ({ node, path, onInputChange, xmlDoc, setUpdatedXml, duplicateIds }
     );
   }
 
-  const classes = ['pt-1', 'tag', 'px-2', 'row', 'align-items-center', 'gap-0'];
+  const getBGColor = (node) => {
+    if (node.duplicate) {
+      return 'rgba(255, 0, 0, 0.4)';
+    }
 
-  // if store id is duplicate, highlight red and text white
-  if (node.tagName === 'Store' && duplicateIds.has(node.getAttribute('id'))
-    || (
-    node.tagName === 'PosId' &&
-    duplicateIds.has(node.parentNode.getAttribute('id')))
-  )
-  {
+    if (node.tagName === 'Store') {
+      if (!node.getAttribute('id') || node.getAttribute('id').trim() === '') {
+        return 'rgba(0, 255, 0, 0.4)';
+      } else if (node.getAttribute('id').match(/\D/)) {
+        return 'rgba(255, 0, 0, 0.4)';
+      }
+    }
+  
+    if (node.tagName === 'Port' && node.textContent.match(/\D/)) {
+      return 'rgba(255, 0, 0, 0.4)';  
+    }
+
+    if (nonTextNodes.includes(node.tagName)) {
+      return '';
+    }
+
+    if (node.textContent.trim() === '') {
+      return 'rgba(0, 255, 0, 0.4)';
+    }
+  };
+
+  const classes = ['pt-1', 'tag', 'px-2', 'row', 'align-items-center', 'gap-0'];
+  if (node.duplicate) {
     classes.push('text-white');
   }
 
-  let backgroundColor = '';
-  if (node.tagName === 'Store' && node.getAttribute('id').trim() === '')
-  {
-    // yellow
-    backgroundColor = 'rgba(255, 255, 0, 0.4)';
-  }
-
-  if (node.duplicate)
-  {
-    backgroundColor = 'rgba(255, 0, 0, 0.4)';
-  }
+  // let backgroundColor = '';
+  let backgroundColor = getBGColor(node);
   
   return (
     <div
@@ -149,12 +146,16 @@ const Node = ({ node, path, onInputChange, xmlDoc, setUpdatedXml, duplicateIds }
       id={path}
     >
       <div className="col-auto me-auto">
-        <label>{node.tagName}</label>
+        <label>
+          <b>
+            {node.tagName}
+          </b>
+        </label>
       </div>
       
-      {renderAttributes(node)}
+      { Attributes({ node }) }
       
-      {handleMailTos(node, path)}
+      { MailTosComponent({ node }) }
 
       {node.tagName === 'Stores' ? (
         <div className="col-auto">
@@ -230,7 +231,6 @@ const Node = ({ node, path, onInputChange, xmlDoc, setUpdatedXml, duplicateIds }
             onInputChange={onInputChange}
             xmlDoc={xmlDoc}
             setUpdatedXml={setUpdatedXml}
-            duplicateIds={duplicateIds}
           />
         )) : null }
 
@@ -252,14 +252,11 @@ function App() {
   // update xml when xmlDoc changes
   useEffect(() => {
     if (xmlDoc) {
-      console.log('xmlDoc changed');
       setUpdatedXml(new XMLSerializer().serializeToString(xmlDoc));
     }
   },[xmlDoc]);
   
   const sendKeepAlive = () => {
-    console.log('interval id: ' + intervalId);
-    console.log('sending keep-alive for ' + selectedFile);
     fetch('/api/xml/keep-alive', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -272,20 +269,18 @@ function App() {
       if (response.status === 400) {
         setUserMsg('File is locked by another user.');
         clearInterval(intervalId);
+        setEditable(false);
         // setXmlDoc(null);
       }
     });
   }
 
   useEffect(() => {
-    console.log('selected file changed: ' + selectedFile);
-    
     if (selectedFile) {
       setUserMsg('Loading XML file...');
 
       fetch(`/api/xml/${selectedFile}`)
         .then(response => {
-          console.log(response);
           if (response.status === 409) {
             throw new Error('File is locked by another user.');
           }
@@ -304,8 +299,6 @@ function App() {
           
           setXmlDoc(xml);
           findDuplicateIds(xml);
-          console.log('xml loaded for ' + selectedFile);
-          console.log('clearing interval id: ' + intervalId);
           clearInterval(intervalId);
           let id = setInterval(sendKeepAlive, KEEP_ALIVE_INTERVAL);
           // console.log('new interval id: ' + id);
@@ -321,13 +314,13 @@ function App() {
         });
     }
     return () => {
-      console.log('unmounting');
+      // console.log('unmounting');
       clearInterval(intervalId);
     }
   }, [selectedFile]);
 
   function loadXMLFiles() {
-    console.log('Fetching xml file list');
+    // console.log('Fetching xml file list');
 
     fetch('/api/xml/files')
       .then(response => response.json())
@@ -349,10 +342,10 @@ function App() {
 
     const handleVisibilityChange = () => {
       if (document.hidden) {
-        console.log('Switched to another tab');
+        //console.log('Switched to another tab');
         clearInterval(intervalId);
       } else {
-        console.log('Switched back to tab');
+        //console.log('Switched back to tab');
         sendKeepAlive();
 
         clearInterval(intervalId);
@@ -416,6 +409,7 @@ function App() {
     return duplicates;
   };
 
+  // find duplicate store ids
   const findDuplicateIds = (xml) => {
     const ids = new Map();
     const duplicates = new Set();
@@ -444,12 +438,8 @@ function App() {
     setDuplicateIds(duplicates);
   };
 
+  // handle input change
   const handleInputChange = (event, path, attrName, node) => {
-    const newDoc = xmlDoc.cloneNode(true);
-    console.log('path', path);
-    console.log('attrName', attrName);
-    console.log('node', node);
-
     if (attrName) {
       node.setAttribute(attrName, event.target.value);
     } else {
@@ -475,19 +465,16 @@ function App() {
   };
 
   const saveXml = () => {
-    const numCheck = (node) => {
-      if (node.textContent.trim() === '') {
-        alert(`${node.tagName} cannot be empty. Please fix before saving.`);
-        return;
-      } else if (node.textContent.match(/\D/)) {
-        alert(`${node.tagName} must be a number (${node.textContent}). Please fix beefore saving.`);
-        return;
-      }
-    };
-
-    console.log('saving xml');
     if (!xmlDoc) {
       return;
+    }
+    // check nodes without children
+    const nodes = xmlDoc.querySelectorAll('*');
+    for (let i = 0; i < nodes.length; i++) {
+      if (!nonTextNodes.includes(nodes[i].tagName) && nodes[i].children.length === 0 && nodes[i].textContent.trim() === '') {
+        alert(`Node ${nodes[i].tagName} cannot be empty. Please fix before saving.`);
+        return;
+      }
     }
 
     // check mails
@@ -508,7 +495,7 @@ function App() {
         alert('Port cannot be empty. Please fix before saving.');
         return;
       } else if (ports[i].textContent.match(/\D/)) {
-        alert('Port must be a number. Please fix before saving.');
+        alert(`Port ${ports[i].textContent} must be a number. Please fix before saving.`);
         return;
       }
     }
@@ -555,9 +542,6 @@ function App() {
         }
       }
     }
-    
-    console.log('saving xml');
-    console.log(updatedXml);
 
     fetch('/api/xml', {
       method: 'POST',
@@ -570,8 +554,7 @@ function App() {
         // alert('Another user is in the system. Wait until they leave and reload the page.');
         // setEditable(false);
         setUserMsg('Your session has expired and another user entered the editor. Please wait and reload the page.');
-        setXmlDoc(null);
-
+        // setXmlDoc(null);
       } else {
         alert('Failed to save XML file.');
       }
