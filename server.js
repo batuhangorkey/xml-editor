@@ -4,10 +4,10 @@ import fs from 'fs';
 import bodyParser from 'body-parser';
 import cors from 'cors';
 import session from 'express-session';
+import crypto from 'crypto';
 
 const app = express();
-
-const secret = process.env.SECRET || 'secret';
+const secret = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
 
 app.use(session({
   secret: secret,

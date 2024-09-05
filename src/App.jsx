@@ -1,23 +1,28 @@
 import 'bootstrap/dist/css/bootstrap.min.css';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import './App.css';
 import './style.css';
+import debounce from 'lodash/debounce';
+import { find } from 'lodash';
 
 const KEEP_ALIVE_INTERVAL = 10000;
 const removableNodes = ['Store', 'PosId', 'MailTo', 'MailCC', 'Port'];
 const nonTextNodes = ['Stores', 'Ports', 'MailTos', 'DBPropertyFile', 'UploadTransDB'];
 
 const Node = ({ node, path, onInputChange, xmlDoc, setUpdatedXml }) => {
-  const [isOpen, setIsOpen] = useState(true);
-  const [updatedNode, setUpdatedNode] = useState(null);
+  const [isOpen, setIsOpen] = useState( node.tagName === 'Store' ? false : true );
+
+  useEffect(() => {
+    console.log('Node mounted');
+    return () => {
+      console.log('Node unmounted');
+    }
+  }
+  , []);
 
   const toggleOpen = () => {
     setIsOpen(!isOpen);
   };
-
-  const handleInputChange = (event, path, attrName, node) => {
-    onInputChange(event, path, attrName, node);
-  }
 
   const addPosId = (node, path) => {
     const newPosId = xmlDoc.createElement('PosId');
@@ -28,7 +33,7 @@ const Node = ({ node, path, onInputChange, xmlDoc, setUpdatedXml }) => {
     node.appendChild(newPosId);
     setUpdatedXml(new XMLSerializer().serializeToString(xmlDoc));
   }
-  
+
   const removeNode = (node) => {
     node.remove();
     setUpdatedXml(new XMLSerializer().serializeToString(xmlDoc));
@@ -50,12 +55,6 @@ const Node = ({ node, path, onInputChange, xmlDoc, setUpdatedXml }) => {
     setUpdatedXml(new XMLSerializer().serializeToString(xmlDoc));
   }
 
-  const handleAttributeChange = (event, path, attrName, node) => {
-    const updatedValue = event.target.value;
-    node.setAttribute(attrName, updatedValue);
-    setUpdatedXml(new XMLSerializer().serializeToString(xmlDoc));
-  }
-
   const Attributes = ({ node }) => {
     if (node.attributes === undefined) return null;
     if (node.attributes.length === 0) return null;
@@ -66,13 +65,19 @@ const Node = ({ node, path, onInputChange, xmlDoc, setUpdatedXml }) => {
           className="input-group input-group-sm py-1">
           <span
             key={"span" + path + index}
-            className="input-group-text">{attr.name}</span>
+            className="input-group-text"
+            style={{ 
+              fontStyle: 'italic',
+              color: 'blue'
+            }}>
+              {attr.name}
+          </span>
           <input
             key={"input" + path + index}
             type="text"
             className="form-control form-control-sm"
             value={attr.value}
-            onChange={(e) => handleAttributeChange(e, path, attr.name, node)}
+            onChange={(e) => onInputChange(e, path, attr.name, node)}
           />
         </div>
       </div>
@@ -106,31 +111,28 @@ const Node = ({ node, path, onInputChange, xmlDoc, setUpdatedXml }) => {
     if (node.duplicate) {
       return 'rgba(255, 0, 0, 0.4)';
     }
-
     if (node.tagName === 'Store') {
       if (!node.getAttribute('id') || node.getAttribute('id').trim() === '') {
         return 'rgba(0, 255, 0, 0.4)';
       } else if (node.getAttribute('id').match(/\D/)) {
         return 'rgba(255, 0, 0, 0.4)';
       }
-    }
-  
-    if (node.tagName === 'Port' && node.textContent.match(/\D/)) {
+    } else if (node.tagName === 'Port' && node.textContent.match(/\D/)) {
       return 'rgba(255, 0, 0, 0.4)';  
-    }
-
-    if (nonTextNodes.includes(node.tagName)) {
+    } else if (nonTextNodes.includes(node.tagName)) {
       return '';
-    }
-
-    if (node.textContent.trim() === '') {
+    } else if (node.textContent.trim() === '') {
       return 'rgba(0, 255, 0, 0.4)';
     }
+    return '';
   };
 
-  const classes = ['pt-1', 'tag', 'px-2', 'row', 'align-items-center', 'gap-0'];
-  if (node.duplicate) {
+  const classes = ['py-0', 'tag', 'row', 'align-items-center', 'gap-0', 'ps-4', 'pe-0']; 
+
+  if (node.parentNode && node.parentNode.duplicate || node.duplicate) {
     classes.push('text-white');
+  }  else {
+    classes.push('text-dark');
   }
 
   // let backgroundColor = '';
@@ -140,8 +142,7 @@ const Node = ({ node, path, onInputChange, xmlDoc, setUpdatedXml }) => {
     <div
       className={classes.join(' ')}
       style={{
-        backgroundColor: backgroundColor,
-        marginLeft: '2px'
+        backgroundColor: backgroundColor
       }}
       id={path}
     >
@@ -188,9 +189,9 @@ const Node = ({ node, path, onInputChange, xmlDoc, setUpdatedXml }) => {
       
       { node.children.length > 0 ? (
         <div className="col-auto mx-0 pw-0">
-          <button className="btn btn-sm btn-primary"
+          <button className="btn btn-sm btn-primary my-1"
             onClick={toggleOpen}>
-            { isOpen ? '+' : '-' }
+            { isOpen ? '-' : '+' }
           </button>
         </div>
       ) : null }
@@ -208,11 +209,11 @@ const Node = ({ node, path, onInputChange, xmlDoc, setUpdatedXml }) => {
               type="text"
               value={node.textContent}
               className="form-control-sm form-control"
-              onChange={(e) => handleInputChange(e, path, null, node)} 
+              onChange={(e) => onInputChange(e, path, null, node)} 
             />
 
             {removableNodes.includes(node.tagName) ? (
-              <button className="btn btn-danger btn-sm my-0 mx-0" onClick={() => removeNode(node)}>
+              <button className="btn btn-danger btn-sm" onClick={() => removeNode(node)}>
                 Remove
               </button>
           ) : null }
@@ -252,10 +253,20 @@ function App() {
   // update xml when xmlDoc changes
   useEffect(() => {
     if (xmlDoc) {
-      setUpdatedXml(new XMLSerializer().serializeToString(xmlDoc));
+      console.log('xmlDoc changed');
+      //setUpdatedXml(new XMLSerializer().serializeToString(xmlDoc));
     }
-  },[xmlDoc]);
+    return () => {
+      console.log('unmounting');
+    }
+  }, [xmlDoc]);
   
+  // debounce sanity check
+  const debouncedSanityCheck = useCallback(debounce((xml) => {
+    findDuplicateIds(xml);
+  }
+  , 1000), []);
+
   const sendKeepAlive = () => {
     fetch('/api/xml/keep-alive', {
       method: 'POST',
@@ -331,7 +342,6 @@ function App() {
       });
   }
 
-
   // fetch xml file on load
   useEffect(() => {
     const handleBeforeUnload = (event) => {
@@ -380,7 +390,6 @@ function App() {
     const children = Array.from(node.children);
     const ids = new Map();
     const duplicates = new Set();
-    const duplicateNodes = new Set();
 
     children.forEach((child, index) => {
       const id = child.textContent;
@@ -434,20 +443,21 @@ function App() {
         store.duplicate = true;
       }
     });
-    
+
     setDuplicateIds(duplicates);
   };
 
   // handle input change
   const handleInputChange = (event, path, attrName, node) => {
+    console.log('handleInputChange');
     if (attrName) {
       node.setAttribute(attrName, event.target.value);
     } else {
       node.textContent = event.target.value;
     }
-    
     setUpdatedXml(new XMLSerializer().serializeToString(xmlDoc));
-    findDuplicateIds(xmlDoc);
+    //findDuplicateIds(xmlDoc);
+    debouncedSanityCheck(xmlDoc);
   };
 
   const getNodeByPath = (doc, path) => {
@@ -513,6 +523,9 @@ function App() {
         return;
       } else if (stores[i].getAttribute('id').match(/\D/)) {
         alert(`Store with id ${stores[i].getAttribute('id')} must be a number. Please fix before saving.`);
+        return;
+      } else if (duplicateIds.has(stores[i].getAttribute('id'))) {
+        alert(`Duplicate Store id ${stores[i].getAttribute('id')} found. Please fix before saving.`);
         return;
       }
     }
@@ -592,7 +605,7 @@ function App() {
           </div>
         </nav>
       </header>
-      <div className="vw-100 justify-content-center container mt-5 pt-5 w-100 px-0" id="xmlContainer">
+      <div className="vw-100 justify-content-center container mt-3 pt-5 w-100 px-0" id="xmlContainer">
         { userMsg ? (
           <div className="text-center">
             <h1>
