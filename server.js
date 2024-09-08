@@ -28,7 +28,7 @@ const xmlFilePath = path.join(xmlDir, xmlFileName);
 const locks = {};
 
 app.use(cors());
-app.use(bodyParser.text({ type: 'application/xml' }));
+app.use(bodyParser.text({ type: 'application/xml', limit: '1mb' }));
 app.use(bodyParser.json());
 app.use(express.static(path.join(__dirname, 'dist')));
 
