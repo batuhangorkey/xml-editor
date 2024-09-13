@@ -1,5 +1,5 @@
 import 'bootstrap/dist/css/bootstrap.min.css';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './App.css';
 import './style.css';
 import debounce from 'lodash/debounce';
@@ -11,6 +11,9 @@ const nonTextNodes = ['Stores', 'Ports', 'MailTos', 'DBPropertyFile', 'UploadTra
 const numberNodes = ['Port', 'PosId'];
 const warningColor = 'rgba(0, 255, 0, 0.4)'; // green
 const alertColor = 'rgba(255, 0, 0, 0.4)'; // red
+
+const XMLContext = React.createContext();
+const useXMLContext = () => React.useContext(XMLContext);
 
 const getBGColor = (node) => {
   if (node.duplicate) {
@@ -32,14 +35,23 @@ const getBGColor = (node) => {
   return '';
 };
 
-const Node = ({ node, path, xmlDoc, setUpdatedXml, handleInputChange }) => {
+const Node = ({ node, path, xmlDoc, setUpdatedXml, handleInputChange, duplicateIds}) => {
   const [isOpen, setIsOpen] = useState( node.tagName === 'Store' ? false : true );
   const [value, setValue] = useState(node.textContent);
-  // const [bgColor, setBgColor] = useState(getBGColor(node));
+  const [waiting, setWaiting] = useState(false);
+  const [duplicate, setDuplicate] = useState(false);
+  const absPath = useRef(path);
+  const [updatedNode, setUpdatedNode] = useState(node);
 
   useEffect(() => {
     console.log('Node updated');
   });
+  
+  const debounceXMLUpdate = useCallback(debounce((xml) => {
+    setUpdatedXml(new XMLSerializer().serializeToString(xml));
+    setWaiting(false);
+  }
+  , 1000), []);
 
   const onValueChange = (e, attrName) => {
     setValue(e.target.value);
@@ -63,12 +75,13 @@ const Node = ({ node, path, xmlDoc, setUpdatedXml, handleInputChange }) => {
     const siblings = Array.from(node.children).filter(n => n.tagName === 'PosId');
     newPosId.textContent = siblings.length + 1;
     node.appendChild(newPosId);
-    setUpdatedXml(new XMLSerializer().serializeToString(xmlDoc));
+    debounceXMLUpdate(xmlDoc);
   }
 
   const removeNode = (node) => {
     node.remove();
-    setUpdatedXml(new XMLSerializer().serializeToString(xmlDoc));
+    setWaiting(true);
+    debounceXMLUpdate(xmlDoc);
   }
 
   const addStore = (node) => {
@@ -81,7 +94,7 @@ const Node = ({ node, path, xmlDoc, setUpdatedXml, handleInputChange }) => {
     // insert new store top
     node.insertBefore(newStore, node.firstChild);
     addPosId(newStore);
-    setUpdatedXml(new XMLSerializer().serializeToString(xmlDoc));
+    debounceXMLUpdate(xmlDoc);
   }
 
   const addNode = (node, tagName) => {
@@ -90,7 +103,8 @@ const Node = ({ node, path, xmlDoc, setUpdatedXml, handleInputChange }) => {
     node.insertBefore(newNode, node.firstChild);
     console.log(node);
     console.log(newNode);
-    setUpdatedXml(new XMLSerializer().serializeToString(xmlDoc));
+    // debounceXMLUpdate(xmlDoc);
+    setUpdatedNode(newNode);
   }
 
   const Attributes = ({ node }) => {
@@ -190,7 +204,12 @@ const Node = ({ node, path, xmlDoc, setUpdatedXml, handleInputChange }) => {
               Add Pos
             </button>
             <button type="button" className="btn btn-danger" onClick={() => removeNode(node)}>
-              Remove
+              Remove Store
+              { waiting ? (
+                <div className="spinner-border spinner-border-sm ms-2" role="status">
+                  <span className="visually-hidden">Waiting...</span>
+                </div>
+                ) : null }
             </button>
           </div>
         </div>
@@ -220,21 +239,23 @@ const Node = ({ node, path, xmlDoc, setUpdatedXml, handleInputChange }) => {
               className="form-control-sm form-control"
               onChange={(e) => onValueChange(e)}
             />
-
             {removableNodes.includes(node.tagName) ? (
               <button className="btn btn-danger btn-sm" onClick={() => removeNode(node)}>
                 Remove
+                { waiting ? (
+                <div className="spinner-border spinner-border-sm ms-2" role="status">
+                  <span className="visually-hidden">Waiting...</span>
+                </div>
+                ) : null }
               </button>
           ) : null }
-
           </div>
         </div>
       ) }
-      
-
       {isOpen && node.children.length > 0 ? 
         Array.from(node.children).map((child, index) => ( 
           <Node
+            parentComponent={Node}
             key={`${path}/${child.tagName}[${index + 1}]`}
             node={child}
             path={`${path}/${child.tagName}[${index + 1}]`}
@@ -243,34 +264,40 @@ const Node = ({ node, path, xmlDoc, setUpdatedXml, handleInputChange }) => {
             setUpdatedXml={setUpdatedXml}
           />
         )) : null }
-
     </div>
   );
 };
 
 
+
 function App() {
   const [xmlDoc, setXmlDoc] = useState(null);
   const [updatedXml, setUpdatedXml] = useState('');
-  const [duplicateIds, setDuplicateIds] = useState(new Set());
   const [selectedFile, setSelectedFile] = useState('server.config');
   const [xmlFiles, setXmlFiles] = useState([]);
   const [userMsg, setUserMsg] = useState('');
-
-  var intervalId = null;
+  const [editable, setEditable] = useState(true);
+  const [duplicateIds, setDuplicateIds] = useState(new Set());
+  const intervalId = useRef(null);
 
   // update xml when xmlDoc changes
   useEffect(() => {
     if (xmlDoc) {
       console.log('xmlDoc changed');
-      //setUpdatedXml(new XMLSerializer().serializeToString(xmlDoc));
+      // setUpdatedXml(new XMLSerializer().serializeToString(xmlDoc));
     }
     return () => {
       console.log('unmounting');
     }
   }, [xmlDoc]);
-  
-  
+
+  useEffect(() => {
+    if (updatedXml) {
+      debouncedSanityCheck(xmlDoc);
+    }
+  }
+  , [updatedXml]);
+
   // debounce sanity check
   const debouncedSanityCheck = useCallback(debounce((xml) => {
     findDuplicateIds(xml);
@@ -286,12 +313,13 @@ function App() {
     .then(response => {
       if (!response.ok) {
         console.error('Failed to send keep-alive.');
-      }
-      if (response.status === 400) {
+      } else if (response.status === 400) {
         setUserMsg('File is locked by another user.');
-        clearInterval(intervalId);
+        clearInterval(intervalId.current);
         setEditable(false);
-        // setXmlDoc(null);
+      } else if (response.ok) {
+        setUserMsg('');
+        setEditable(true);
       }
     });
   }
@@ -320,10 +348,10 @@ function App() {
           
           setXmlDoc(xml);
           findDuplicateIds(xml);
-          clearInterval(intervalId);
+          clearInterval(intervalId.current);
           let id = setInterval(sendKeepAlive, KEEP_ALIVE_INTERVAL);
           // console.log('new interval id: ' + id);
-          intervalId = id;
+          intervalId.current = id;
           // console.log('interval id: ' + intervalId);
           setUserMsg('');
         })
@@ -336,7 +364,7 @@ function App() {
     }
     return () => {
       // console.log('unmounting');
-      clearInterval(intervalId);
+      clearInterval(intervalId.current);
     }
   }, [selectedFile]);
 
@@ -355,21 +383,19 @@ function App() {
   // fetch xml file on mount
   useEffect(() => {
     const handleBeforeUnload = (event) => {
-      clearInterval(intervalId);
+      clearInterval(intervalId.current);
       navigator.sendBeacon(`/api/xml/${selectedFile}/unlock`, JSON.stringify({ filename: selectedFile }));
     }
 
     const handleVisibilityChange = () => {
+      clearInterval(intervalId.current);
       if (document.hidden) {
-        //console.log('Switched to another tab');
-        clearInterval(intervalId);
+        // console.log('Switched to another tab');
       } else {
-        //console.log('Switched back to tab');
+        // console.log('Switched back to tab');
         sendKeepAlive();
-
-        clearInterval(intervalId);
-        let id = setInterval(sendKeepAlive, KEEP_ALIVE_INTERVAL);
-        intervalId = id;
+        const id = setInterval(sendKeepAlive, KEEP_ALIVE_INTERVAL);
+        intervalId.current = id;
         loadXMLFiles();
       }
     }
@@ -380,7 +406,7 @@ function App() {
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
-      clearInterval(intervalId);
+      clearInterval(intervalId.current);
       window.removeEventListener('beforeunload', handleBeforeUnload);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     }
@@ -454,6 +480,7 @@ function App() {
     const ports = xml.querySelectorAll('Ports')[0];
     findDupChildren(ports);
     setDuplicateIds(duplicates);
+    // duplicateIds.current = duplicates;
   };
 
   // handle input change
@@ -474,17 +501,6 @@ function App() {
     }
     return currentNode;
   };
-  
-  const setEditable = (editable) => {
-    const nodes = xmlDoc.querySelectorAll('*');
-    for (let i = 0; i < nodes.length; i++) {
-      if (editable) {
-        nodes[i].removeAttribute('readonly');
-      } else {
-        nodes[i].setAttribute('readonly', true);
-      }
-    }
-  };
 
   const checkNoChildren = (tagName) => {
     const nodes = xmlDoc.querySelectorAll(tagName);
@@ -497,17 +513,59 @@ function App() {
     return false;
   };
 
-  const checkTextEmptyNode = (node) => {
-    if (node.children.length === 0 && node.textContent.trim() === '') {
-      alert(`Node ${node.tagName} cannot be empty. Please fix before saving.`);
-      return;
+  const checkEmpty = (tagName) => {
+    const nodes = xmlDoc.querySelectorAll(tagName);
+    for (let i = 0; i < nodes.length; i++) {
+      if (nodes[i].textContent.trim() === '') {
+        alert(`Node ${tagName} cannot be empty. Please fix before saving.`);
+        return true;
+      }
     }
+    return false;
+  };
+
+  const checkNumber = (tagName) => {
+    const nodes = xmlDoc.querySelectorAll(tagName);
+    for (let i = 0; i < nodes.length; i++) {
+      const val = nodes[i].textContent;
+      if (val.match(/\D/)) {
+        alert(`Node ${tagName} with content ${val} must be a number. Please fix before saving.`);
+        return true;
+      }
+    }
+    return false;
+  };
+
+  const checkDuplicate = (tagName) => {
+    const nodes = xmlDoc.querySelectorAll(tagName);
+    const ids = new Map();
+    for (let i = 0; i < nodes.length; i++) {
+      const id = nodes[i].textContent;
+      if (ids.has(id)) {
+        alert(`Duplicate ${tagName} with content ${id} found. Please fix before saving.`);
+        return true;
+      } else {
+        ids.set(id, true);
+      }
+    }
+    return false;
   };
 
   const saveXml = () => {
     if (!xmlDoc) {
       return;
     }
+    // general ruleset
+    const config = {
+      'Ports': [checkNoChildren],
+      'Port': [checkNumber, checkDuplicate],
+      'MailTos': [checkNoChildren],
+      'MailTo': [checkDuplicate],
+      'Stores': [checkNoChildren],
+      'Store': [checkNoChildren],
+      'PosId': [checkEmpty, checkNumber]
+    };
+
     // check nodes without children
     const nodes = xmlDoc.querySelectorAll('*');
     for (let i = 0; i < nodes.length; i++) {
@@ -516,13 +574,17 @@ function App() {
         return;
       }
     }
-  
-    if (checkNoChildren('MailTos') ||
-        checkNoChildren('Stores') ||
-        checkNoChildren('Ports')) {
-      return;
+    
+    // evaluate config
+    for (const [tagName, checks] of Object.entries(config)) {
+      for (let i = 0; i < checks.length; i++) {
+        if (checks[i](tagName)) {
+          return;
+        }
+      }
     }
-  
+    
+    // SPECIAL CASES
     // check ports
     const ports = xmlDoc.querySelectorAll('Port');
     if (ports.length === 0) {
@@ -597,7 +659,8 @@ function App() {
       } else if (response.status === 409) {
         // alert('Another user is in the system. Wait until they leave and reload the page.');
         // setEditable(false);
-        setUserMsg('Your session has expired and another user entered the editor. Please wait and reload the page.');
+        setUserMsg('Your session has expired and/or another user entered the editor. Please wait and reload the page.');
+        setEditable(false);
         // setXmlDoc(null);
       } else {
         alert('Failed to save XML file.' + response.statusText);
@@ -618,7 +681,7 @@ function App() {
             <button 
               className="btn btn-primary" 
               onClick={saveXml} 
-              disabled={userMsg !== ''}>
+              disabled={!editable}>
               Save
             </button>
             

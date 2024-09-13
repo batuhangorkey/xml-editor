@@ -5,6 +5,7 @@ import bodyParser from 'body-parser';
 import cors from 'cors';
 import session from 'express-session';
 import crypto from 'crypto';
+import { start } from 'repl';
 
 const app = express();
 const secret = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
@@ -60,7 +61,6 @@ app.post('/api/xml', (req, res) => {
   }
 
   if (locks[xmlFileName].sessionId !== req.sessionID) {
-    
     return res.status(409).send('File is locked by another session');
   }
 
@@ -92,30 +92,27 @@ app.post('/api/xml', (req, res) => {
 app.get('/api/xml/:filename', (req, res) => {
   console.log('session id: ' + req.sessionID);
   console.log('Reading file: ' + req.params.filename);
-  
   if (!locks[req.params.filename]) {
+    // if the file is not locked, lock the file
     console.log('File not locked');
     console.log('Locking file');
     console.log('session id: ' + req.sessionID);
     locks[req.params.filename] = {
       sessionId: req.sessionID,
+      startTime: Date.now(),
       timestamp: Date.now(),
     };
     res.type('application/xml');
     res.status(200).send(fs.readFileSync(path.join(xmlDir, req.params.filename), 'utf8'));
-
-  } 
-  else if (locks[req.params.filename].sessionId !== req.sessionID) 
-  {
+  } else if (locks[req.params.filename].sessionId !== req.sessionID) {
+    // if the file is locked by another session, return 409 status code
     console.log('File locked by another session');
     res.sendStatus(409); // Conflict
-  } 
-  else 
-  {
+  } else {
+    // if the file is locked by this session, return the content of the xml file
     console.log('File locked by this session id already');
     console.log('session id: ' + req.sessionID);
     console.log('file session id: ' + locks[req.params.filename].sessionId);
-
     // check if the xml file we are reading is read only with fs module
     // if it is read only, return 400 status code
     // if it is not read only, return the content of the xml file
@@ -127,11 +124,7 @@ app.get('/api/xml/:filename', (req, res) => {
       console.log('File is read only');
       res.status(401).send('File is read only');
     }
-
-    //res.type('application/xml');
-    //res.status(200).send(fs.readFileSync(path.join(xmlDir, req.params.filename), 'utf8'));
   }
-
 });
 
 app.post('/api/xml/:filename/unlock', (req, res) => {
@@ -144,7 +137,6 @@ app.post('/api/xml/:filename/unlock', (req, res) => {
   if (locks[filename] === undefined) {
     console.log('this file is not locked');
     console.log('*'.repeat(20));
-
     return res.status(400).send('This file is not locked.');
   } else if (locks[filename].sessionId === sessionId) {
     delete locks[filename];
@@ -186,13 +178,10 @@ app.post('/api/xml/keep-alive', (req, res) => {
     return res.sendStatus(200);
   }
 
-  if (locks[filename] && locks[filename].sessionId === sessionId) 
-  {
+  if (locks[filename] && locks[filename].sessionId === sessionId) {
     locks[filename].timestamp = Date.now(); // Update timestamp on each ping
     res.sendStatus(200);
-  }
-  else
-  {
+  } else {
     console.log('File locked by another session');
     res.sendStatus(400);
   }
@@ -215,4 +204,3 @@ setInterval(() => {
 app.listen(PORT, () => {
   console.log(`Server running at http://localhost:${PORT}`);
 });
-
